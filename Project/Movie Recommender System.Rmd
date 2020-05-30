@@ -1,0 +1,137 @@
+---
+title: "Movie Recommender System"
+output: pdf_document
+df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##STEP 1: Set seed & Install packages
+
+```{r}
+set.seed(0821)
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  "ggplot2",
+  "recommenderlab",
+  "reshape2",
+  "dplyr"
+)
+```
+
+##STEP 2: Create train data and test data
+
+```{r}
+# Import data
+setwd("~/Desktop/2019 spring/542/project3/ml-1m")
+ratings = read.csv('ratings.dat', sep = ':', 
+                   colClasses = c('integer', 'NULL'), header = FALSE)
+colnames(ratings) = c('UserID', 'MovieID', 'Rating', 'Timestamp')
+
+movies = readLines('movies.dat')
+movies = strsplit(movies, split = "::", fixed = TRUE, useBytes = TRUE)
+movies = matrix(unlist(movies), ncol = 3, byrow = TRUE)
+movies = data.frame(movies, stringsAsFactors = FALSE)
+colnames(movies) = c('MovieID', 'Title', 'Genres')
+movies$MovieID = as.integer(movies$MovieID)
+movies$Genres = ifelse(grepl('\\|', movies$Genres), "Multiple", 
+                       movies$Genres)
+rating_merged = merge(x = ratings, y = movies, by.x = "MovieID")
+
+# Split data
+ratings$Timestamp = NULL;
+colnames(ratings) = c('user', 'movie', 'rating')
+train.id = sample(nrow(ratings), floor(nrow(ratings) * 0.6))
+train = ratings[train.id, ]
+
+test = ratings[-train.id, ]
+test.id = sample(nrow(test), floor(nrow(test) * 0.5))
+test = test[test.id, ]
+
+label = test[c('user', 'rating')]
+
+```
+
+Here train data contains about 60% rows of the ratings.dat from the MovieLens 1M dataset (of the same format) and test data contains about 20% of the user-movie pairs from the ratings.dat from the MovieLens 1M dataset. 
+
+
+##STEP 3: Build two models to predict the movie rating
+
+### Model 1: User-Based Collaborative Filtering
+
+Collaborative filtering (CF) is a technique predicting the interests of a user by collecting preferences or taste information from the training dataset. In user based approaches, user rating data is used to compute the similarity between users. The method we used here calculates recommendations from similar user ratings of the movie. It consists of two steps:
+
+1. Look for users who are the nearest neighbors of the target user (the user whom the prediction is for), i.e., who have similar rating patterns on movies to the target user. 
+
+2. Use the ratings from those neighbors found in step 1 to predict the rating of the target user.
+
+To apply this method to our train data, we create a recommender in R using the package "recommenderlab", and then predict the ratings of users in the test data. We use `Cosine` to measure similarity as the real rating matrix is sparse. When building the recommender, we set the number of nearest neighbors to be 5. Note that it is possible some movies or users do not appear in the training, but in test. So we define the default value of rating to be 2.5.
+
+```{r}
+### Model 1
+R = acast(train, user ~ movie)
+R = as(R, 'realRatingMatrix')
+rec1 = Recommender(R, method = 'UBCF',
+                  parameter = list(normalize = 'Z-score', method = 'Cosine', nn = 5))
+
+recom1 = predict(rec1, R, type = 'ratings')  
+rec_list1 = as(recom1, 'list')
+
+test$rating1 = NA
+
+for (u in 1:nrow(test)){
+  
+  userid = as.character(test$user[u])
+  movieid = as.character(test$movie[u])
+  
+  rating = rec_list1[[userid]][movieid]
+  test$rating1[u] = ifelse(is.na(rating), 2.5, rating)
+}
+
+# RMSE 
+RMSE1 = sqrt(mean((test$rating1 - label$rating)^2))
+```
+
+### Model 2: Item-Based Collaborative Filtering
+
+This method is similar to the user-based collaborative filtering (UBCF), expect that it has an item-centric manner. Unlike UBCF, item-based collaborative filtering (IBCF) assumes that users tend to like similar items. Therefore, similarity is measures among items. It also has two steps:
+
+1. Build an item-item matrix determining relationships between pairs of items.
+
+2. Use the most similar items to the target user's already-rated items to generate a list of recommendations by examining the matrix and matching the data of target user.
+
+The R command of IBCF is pretty much the same as UBCF. However, this method returns much more NAs when making prediction. Therefore, we assigned the average rating of train data to be the default value of rating to reduce RMSE.
+
+```{r}
+### Model 2
+rec2 = Recommender(R, method = 'als',
+                  parameter = list(normalize = 'center', method = 'Cosine', k = 5))
+
+recom2 = predict(rec2, R, type = 'ratings')  
+rec_list2 = as(recom2, 'list')
+
+test$rating2 = NA
+
+r = which.max(table(train$rating))
+for (u in 1:nrow(test)){
+  
+  userid = as.character(test$user[u])
+  movieid = as.character(test$movie[u])
+  
+  rating = rec_list2[[userid]][movieid]
+  test$rating2[u] = ifelse(is.na(rating), mean(train$rating), rating)
+}
+
+# RMSE 
+RMSE2 = sqrt(mean((test$rating2 - label$rating)^2))
+```
+
+## STEP 4: Report the RMSE
+
+```{r}
+data.frame("UBCF"=RMSE1, "IBCF"=RMSE2)
+```
+
