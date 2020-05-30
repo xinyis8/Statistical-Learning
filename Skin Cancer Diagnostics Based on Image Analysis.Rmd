@@ -1,0 +1,360 @@
+---
+title: 'STAT 542 Group Project: Skin Cancer Diagnostics'
+author: "Xinlei Zhang"
+date: "12/6/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r}
+library(OpenImageR)
+library(tidyverse)
+library(magick)
+library(scales)
+library(imager)
+library(xgboost)
+```
+
+```{r}
+#read in benign and malignant pictures
+imageFiles <- list.files("542/benign", pattern="*jpg$", full.name=TRUE)
+benign<-lapply(imageFiles, readImage)
+imageFiles2 <- list.files("542/malignant", pattern="*jpg$", full.name=TRUE)
+malignant <- lapply(imageFiles2, readImage)
+```
+
+
+```{r}
+#cut the pictures to the same size
+be.new <-  benign
+for(i in 1:150){
+  img <- benign[[i]]
+  width <- dim(img)[1]
+  height <- dim(img)[2]
+  be.new[[i]] <- img[(width/2-100):(width/2+99),(height/2-100):(height/2+149),]  
+  #take the size from the center, 200 * 250 pixels
+}
+
+ma.new <-  malignant
+for(i in 1:150){
+  img <- malignant[[i]]
+  width <- dim(img)[1]
+  height <- dim(img)[2]
+  ma.new[[i]] <- img[(width/2-100):(width/2+99),(height/2-100):(height/2+149),]
+}
+```
+
+
+```{r}
+#convert the 3 columns of RGB into one column
+be.expand <- matrix(0,nrow = 150,ncol = 150000)
+for(i in 1:150){
+img.expand <- apply(be.new[[i]], 3, c)
+temp <- cbind(img.expand[,1],img.expand[,2],img.expand[,3])
+be.expand[i,]<-temp
+}
+
+ma.expand <- matrix(0,nrow = 150,ncol = 150000)
+for(i in 1:150){
+img.expand <- apply(ma.new[[i]], 3, c)
+temp <- cbind(img.expand[,1],img.expand[,2],img.expand[,3])
+ma.expand[i,]<-temp
+}
+
+
+#Traning data and testing data
+set.seed(123)
+#make sure the proportion of benign and malignant is the same in training and testing data
+k <- sample(1:150,0.75*150)
+train <- rbind(be.expand[k,],ma.expand[k,])
+test <- rbind(be.expand[-k,],ma.expand[-k,])
+
+diagnosis <- rep(1,nrow(train))
+diagnosis[1:(nrow(train)/2)] <- 0
+train <- cbind(train,diagnosis)
+
+diagnosis <- rep(1,nrow(test))
+diagnosis[1:(nrow(test)/2)] <- 0
+test <- cbind(test,diagnosis)
+```
+
+
+```{r}
+#generalized linear regression
+library(glmnet)
+y <- train[,ncol(train)]
+x <- train[,-ncol(train)]
+cv.out=cv.glmnet(x,as.factor(y),alpha=0,family="binomial",nfolds=10,type.measure = "auc")
+bestlam=cv.out$lambda.min
+pre<-predict(cv.out, test[,-ncol(test)], s = "lambda.min")
+est <- rep(0,length(pre))
+est[pre>0]<-1     #prediction>0 --> malignant
+ytest = test[,ncol(test)]   #cutoff as 0
+mean(ytest==est)  #0.6447368 accuracy
+```
+
+```{r}
+#random forest
+library(randomForest)
+rf.fit<-randomForest(x,as.factor(y),nodesize = 5)
+xtest = test[,-ncol(test)]
+dimnames(xtest) <- NULL
+est2<-predict(rf.fit,xtest)   #no cutoff, automatical classification
+ytest = test[,ncol(test)] 
+mean(ytest==est2)
+
+```
+
+
+
+```{r}
+#Extreme Gradient Boosting
+library(xgboost)
+
+xgb.model <- xgboost(data =as.matrix(x), label = as.matrix(as.factor(y)), eta = 0.2, nrounds = 300, verbose = 0)
+tmp <- predict(xgb.model, as.matrix(test[,-ncol(test)])) #all > 1? 
+est3=ifelse(tmp > mean(tmp),1,0)     # cutoff as mean of the  as the result is a probability
+mean(test[,ncol(test)]==est3)    
+# nrounds=300 eta=0.2 0.5 here >0 1 <0 0
+```
+
+
+
+
+#Q2
+
+```{r}
+#Asymmetry
+
+bright_difference = function(my_data){  #my_data should be the RGB
+bright_diff = rep(0,150)
+for (i in 1:150){ 
+ red = my_data[[i]][,,1] 
+ green = my_data[[i]][,,2]
+ blue = my_data[[i]][,,3]
+ #calculate the brightness according to RGB
+ bright = (red*299+green*587+blue*114)/1000
+ #brightness is also a 200width*250height matrix
+ #https://www.w3.org/TR/AERT/#color-contrast
+
+ #partition to top and bottom two parts
+ bright_top = bright[1:125,]
+ bright_bottom = bright[126:250]
+ #get the first quantile and maximum
+ top_max = max(bright_top)
+ top_1qua = quantile(bright_top, 0.25)
+ bottom_max = max(bright_bottom)
+ bottom_1qua = quantile(bright_bottom, 0.25)
+ #calculate the difference (not sure which half is brighter, calculate the difference between their brightness and darkness respectively)
+ diff1 = sqrt((top_max-bottom_1qua)^2 + (top_1qua-bottom_max)^2)
+
+ #partition to left and right two parts
+ bright_left = bright[,1:100]
+ bright_right = bright[,101:200]
+ #get the first quantile and maximum
+ left_max = max(bright_left)
+ left_1qua = quantile(bright_left, 0.25)
+ right_max = max(bright_right)
+ right_1qua = quantile(bright_right, 0.25)
+ #calculate the difference
+ diff2 = sqrt((left_max-right_1qua)^2 + (left_1qua-right_max)^2)
+ #get the maximum of the difference (we get the maximum of the difference of two partition methods)
+ bright_diff[i] = max(diff1, diff2)
+}
+ return(bright_diff)
+}
+be_bright_diff = bright_difference(be.new)
+ma_bright_diff = bright_difference(ma.new)
+par(mfrow=c(1,2))
+hist(be_bright_diff)
+hist(ma_bright_diff)
+```
+
+
+```{r}
+#Color Change
+get_colorPal <- function(im, n=8, cs="RGB"){
+  #print(cs) 
+  tmp <-im %>% image_resize("100") %>% 
+    image_quantize(max=n, colorspace=cs) %>%  ## reducing colours! different colorspace gives you different result
+    magick2cimg() %>%  ## I'm converting, because I want to use as.data.frame function in imager package.
+    RGBtoHSV() %>% ## i like sorting colour by hue rather than RGB (red green blue)
+    as.data.frame(wide="c") %>%  #3 making it wide makes it easier to output hex colour
+    mutate(hex=hsv(rescale(c.1, from=c(0,360)),c.2,c.3),
+           hue = c.1,
+           sat = c.2,
+           value = c.3) %>%
+    count(hex, hue, sat,value, sort=T) %>% 
+    mutate(colorspace = cs)
+  
+  return(tmp %>% select(colorspace,hex,hue,sat,value,n)) ## I want data frame as a result.
+}
+```
+
+```{r}
+be.colors <- rep(0,150) #benign
+for (i in 1:150)
+{
+im<-image_read(be.new[[i]]) %>% image_quantize(max=24)
+be.colors[i] <- length(get_colorPal(im) %>% pull(hex))   # number of colors
+}
+
+ma.colors <- rep(0,150) #malignant
+for (i in 1:150)
+{
+im<-image_read(ma.new[[i]]) %>% image_quantize(max=24)
+ma.colors[i] <- length(get_colorPal(im) %>% pull(hex))   # number of colors
+}
+
+```
+
+
+
+```{r}
+#Diameter
+#choose the middle line horizontally and vertically
+#choose the first pixel of the horizontal middle line as the normal skin example(some images are taken from 'microscpe' so they are dark at the corners)
+#subtract the normal skin from each pixel in the middle lines and then divided by the normal skin to see the relative error(percentage error)
+#####scale them as normalization: (x-mean)/sd
+#set the tolerance accepted as normal skin as 75% according to several examples
+#count the amount of pixels of abnormal skin in the middle lines and divided by the original width and height respectively 
+#choose the larger one of the horizontal and vertical middle lines
+
+find_diameter=function(data,num,tol=75){
+img_try=data[[num]]
+width <- dim(img_try)[1]
+height <- dim(img_try)[2]
+cons_red=img_try[1,floor(height/2),1]
+cons_green=img_try[1,floor(height/2),2]
+cons_blue=img_try[1,floor(height/2),3]
+ima_dif_red=abs(img_try[1:(width),floor(height/2),1]-cons_red)/cons_red*100
+ima_dif_green=abs(img_try[1:(width),floor(height/2),2]-cons_green)/cons_green*100
+ima_dif_blue=abs(img_try[1:(width),floor(height/2),3]-cons_blue)/cons_blue*100
+dif_row=as.matrix(ima_dif_red+ima_dif_green+ima_dif_blue)
+#plot(dif_row,main='dif_row(%)',ylab='dif_row(%)')
+im_dif_red=abs(img_try[floor(width/2),1:(height),1]-cons_red)/cons_red*100
+im_dif_green=abs(img_try[floor(width/2),1:(height),2]-cons_green)/cons_green*100
+im_dif_blue=abs(img_try[floor(width/2),1:(height),3]-cons_blue)/cons_blue*100
+dif_col=as.matrix(im_dif_red+im_dif_green+im_dif_blue)
+#plot(dif_col,main='dif_column(%)',ylab='dif_column(%)')
+row_len_per=length(dif_row[dif_row>tol])/width
+col_len_per=length(dif_col[dif_col>tol])/height
+return(max(row_len_per,col_len_per))
+}
+
+```
+
+```{r}
+be.diameter <-ma.diameter<- rep(0,150)
+for( i in 1:150){
+  be.diameter[i] <- find_diameter(benign,i)
+  ma.diameter[i] <- find_diameter(malignant,i)
+}
+```
+
+```{r}
+# Visualization for Color Variation Part 
+red_sd_benign=as.data.frame(as.matrix(red_sd_benign))
+colnames(red_sd_benign)='red_sd'
+ggplot(data=red_sd_benign,aes(red_sd))+
+geom_histogram(color='white',fill='red')+ 
+ylab(label = 'Frequency')+labs(title="Histogram of Standard Deviation of Red for Benign Images")+theme(plot.title=element_text(colour="black",size=10, hjust = 0.5))
+red_sd_ma=as.data.frame(as.matrix(red_sd_ma))
+colnames(red_sd_ma)='red_sd'
+ggplot(data=red_sd_ma,aes(red_sd))+
+geom_histogram(color='white',fill='red')+ 
+ylab(label = 'Frequency')+labs(title="Histogram of Standard Deviation of Red for Malignant Images")+theme(plot.title=element_text(colour="black",size=10, hjust = 0.5))
+
+green_sd_ma=as.data.frame(as.matrix(green_sd_ma))
+colnames(green_sd_ma)='green_sd'
+ggplot(data=green_sd_ma,aes(green_sd))+
+geom_histogram(color='white',fill='darkgreen')+ 
+ylab(label = 'Frequency')+labs(title="Histogram of Standard Deviation of Green for Malignant Images")+theme(plot.title=element_text(colour="black",size=10, hjust = 0.5))
+green_sd_benign=as.data.frame(as.matrix(green_sd_benign))
+colnames(green_sd_benign)='green_sd'
+ggplot(data=green_sd_benign,aes(green_sd))+
+geom_histogram(color='white',fill='darkgreen')+ 
+ylab(label = 'Frequency')+labs(title="Histogram of Standard Deviation of Green for Benign Images")+theme(plot.title=element_text(colour="black",size=10, hjust = 0.5))
+
+blue_sd_ma=as.data.frame(as.matrix(blue_sd_ma))
+colnames(blue_sd_ma)='blue_sd'
+ggplot(data=blue_sd_ma,aes(blue_sd))+
+geom_histogram(color='white',fill='skyblue')+ 
+ylab(label = 'Frequency')+labs(title="Histogram of Standard Deviation of Blue for Malignant Images")+theme(plot.title=element_text(colour="black",size=10, hjust = 0.5))
+blue_sd_benign=as.data.frame(as.matrix(blue_sd_benign))
+colnames(blue_sd_benign)='blue_sd'
+ggplot(data=blue_sd_benign,aes(blue_sd))+
+geom_histogram(color='white',fill='skyblue')+ 
+ylab(label = 'Frequency')+labs(title="Histogram of Standard Deviation of Blue for Benign Images")+theme(plot.title=element_text(colour="black",size=10, hjust = 0.5))
+
+
+```
+
+```{r}
+# new features
+ bright.diffs <- matrix(be_bright_diff,ma_bright_diff,nrow=300,ncol = 1) #Asymmetry
+ colours <- matrix(be.colors,ma.colors,nrow = 300,ncol = 1) #Color Change
+ diameters <- matrix(be.diameter,ma.diameter,nrow = 300,ncol = 1) #Diameter
+ 
+# color variation
+red_sd_benign <- blue_sd_benign <- green_sd_benign <- rep(0,150)
+red_sd_ma <- blue_sd_ma <- green_sd_ma <- rep(0,150)
+red_sd <- blue_sd <- green_sd <- rep(0,300)
+for ( i in 1:300){
+   if(i<=150){
+     red_sd[i] <- sd(be.new[[i]][,,1])
+     blue_sd[i]<- sd(be.new[[i]][,,2])
+     green_sd[i]<- sd(be.new[[i]][,,3])
+     red_sd_benign[i] <- sd(be.new[[i]][,,1])
+     blue_sd_benign[i]<- sd(be.new[[i]][,,2])
+     green_sd_benign[i]<- sd(be.new[[i]][,,3])
+   }
+  else{
+    red_sd[i] <- sd(ma.new[[i-150]][,,1])
+     blue_sd[i]<-sd(ma.new[[i-150]][,,2])
+     green_sd[i]<-sd(ma.new[[i-150]][,,3])
+     red_sd_ma[i] <- sd(ma.new[[i-150]][,,1])
+     blue_sd_ma[i]<-sd(ma.new[[i-150]][,,2])
+     green_sd_ma[i]<-sd(ma.new[[i-150]][,,3])
+  }
+}
+```
+
+
+
+```{r}
+#response
+diagnosis <- rep(1,300); diagnosis[1:150]<-0
+data.new <- data.frame(bright.diffs,colours,diameters,red_sd,blue_sd,green_sd,diagnosis)
+
+#Traning data and testing data
+k1 <- sample(1:150,0.75*150)
+k2 <- sample(151:300,0.75*150)
+train <- rbind(data.new[k1,],data.new[k2,])
+test <- rbind(data.new[-k1,],data.new[-k2,])
+```
+
+
+```{r}
+#random forest
+library(randomForest)
+rf.fit2<-randomForest(as.factor(diagnosis)~bright.diffs+colours+red_sd+blue_sd+green_sd+diameters,data=train,mtry=6,nodesize=2)
+est<-predict(rf.fit2,test)
+mean(est==test$diagnosis)
+# 0.8244681
+# 0.8537234
+```
+
+```{r}
+#support vector machine
+library(e1071)
+svm.fit <- svm(diagnosis ~ ., data = train, type='C-classification', 
+                   kernel='linear', scale=FALSE, cost = 10000)
+est2 <- predict(svm.fit,test)
+mean(est2==test$diagnosis)
+# 0.63279787
+```
