@@ -1,0 +1,214 @@
+---
+title: "Assignment_3_bonus_9767_xinyis8_XinyiSong"
+author: "Xinyi Song"
+date: "3/28/2019"
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,eval=TRUE, echo=TRUE, include=TRUE}
+# Generate Samples from an HMM
+T = 200
+A0 = rbind(c(0.8, 0.2),
+           c(0.2, 0.8))
+B0 = rbind(c(0.1, 0.2, 0.7), 
+           c(0.4, 0.3, 0.3))
+w0 = c(0.5, 0.5)
+para0 = list(mz = 2, mx = 3, w = w0,
+             A = A0, B = B0)
+genHMM = function(para, n){
+  # return n samples from HMM with parameter = para
+  z = para$mz
+  mx = para$mx
+  w = para$w
+  A = para$A
+  B = para$B
+  Z = rep(0, n)
+  X = rep(0, n)
+  Z[1]<-sample(1:2,1,replace = TRUE, prob = w0)
+  ## YOUR CODE: generate Z[1]
+  for(i in 2:n)
+    Z[i] <- sample(1:2, 1, replace = TRUE, prob=A[Z[i-1],])
+    for(i in 1:n)
+      ## YOUR CODE: generate X[i]
+      X[i]<-sample(1:3,1, replace=TRUE,prob=B[Z[i], ])
+      return(X)
+}
+
+data = genHMM(para0, T)
+# The Baum-Welch (i.e., EM) Algorihtm
+myBW = function(x, para, n.iter = 100){
+  # Input:
+  # x: T-by-1 observation sequence
+  # para: initial parameter value
+  # Output updated para value (A and B; we do not update w)
+  
+  for(i in 1:n.iter){
+    para = BW.onestep(x, para)
+  }
+  return(para)
+}
+
+# In function BW.onestep, we operate the E-step and M-step for one iteration, which should look as follows
+BW.onestep = function(x, para){
+  # Input: 
+  # x: T-by-1 observation sequence
+  # para: mx, mz, and current para values for
+  #    A: initial estimate for mz-by-mz transition matrix
+  #    B: initial estimate for mz-by-mx emission matrix
+  #    w: initial estimate for mz-by-1 initial distribution over Z_1
+  # Output the updated parameters after one iteration
+  # We DO NOT update the initial distribution w
+  
+  T = length(x)
+  mz = para$mz
+  mx = para$mx
+  A = para$A
+  B = para$B
+  w = para$w
+  alp = forward.prob(x, para)
+  beta = backward.prob(x, para)
+  
+  myGamma = array(0, dim=c(mz, mz, T-1))
+  ## YOUR CODE: 
+  ## Compute gamma_t(i,j) P(Z[t] = i, Z[t+1]=j), 
+  ## for t=1:T-1, i=1:mz, j=1:mz, 
+  ## which are stored an array, myGamma
+  for (t in 1:(T-1)){
+    for(i in 1:mz)
+      for(j in 1:mz)
+        myGamma[i,j,t]= alp[t,i]*A[i,j]* B[j, x[t+1]] *beta[t+1,j]
+      
+  }
+  # for (t in 1:(T-1)){
+ # myGamma[,,t]= outer(alp[t, ], B[, x[t+1]] * beta[t+1,]) * A
+#}
+ 
+  # M-step for parameter A
+  A = rowSums(myGamma, dims = 2)
+  A = A/rowSums(A)
+  # M-step for parameter B
+  tmp = apply(myGamma, c(1, 3), sum)  # mz-by-(T-1)
+  tmp = cbind(tmp, colSums(myGamma[, , T-1]))
+  for(l in 1:mx){
+    B[, l] = rowSums(tmp[, which(x==l)])
+  }
+  B = B/rowSums(B)
+  
+  para$A = A
+  para$B = B
+  return(para)
+}
+# Compute the forward and backward probabilities using the following functions
+forward.prob = function(x, para){
+  # Output the forward probability matrix alp 
+  # alp: T by mz, (t, i) entry = P(x_{1:t}, Z_t = i)
+  T = length(x)
+  mz = para$mz
+  A = para$A
+  B = para$B
+  w = para$w
+  alp = matrix(0, T, mz)
+  
+  # fill in the first row of alp
+  alp[1, ] = w * B[, x[1]]
+  # Recursively compute the remaining rows of alp
+  for(t in 2:T){
+    tmp = alp[t-1, ] %*% A
+    alp[t, ] = tmp * B[, x[t]]
+  }
+  return(alp)
+}
+
+backward.prob = function(x, para){
+  # Output the backward probability matrix beta
+  # beta: T by mz, (t, i) entry = P(x_{1:t}, Z_t = i)
+  T = length(x)
+  mz = para$mz
+  A = para$A
+  B = para$B
+  w = para$w
+  beta = matrix(1, T, mz)
+  
+  # The last row of beta is all 1.
+  # Recursively compute the previous rows of beta
+  for(t in (T-1):1){
+    tmp = as.matrix(beta[t+1, ] * B[, x[t+1]])  # make tmp a column vector
+    beta[t, ] = t(A %*% tmp)
+  }
+  return(beta)
+}
+# The Viterbi Algorihtm
+myViterbi = function(x, para){
+  # Output: most likely sequence of Z (T-by-1)
+  T = length(x)
+  mz = para$mz
+  A = para$A
+  B = para$B
+  w = para$w
+  log.A = log(A)
+  log.w = log(w)
+  log.B = log(B)
+  
+  # Compute delta (in log-scale)
+  delta = matrix(0, T, mz) 
+  # fill in the first row of delta
+  delta[1, ] = log.w + log.B[, x[1]]
+  
+  ## YOUR CODE: 
+  for (t in 2:T){
+    for (i in 1:mz){
+     delta[t,i] = max(delta[t-1,]+log.A[,i])+log.B[i, x[t]]
+    }
+  }
+  
+  ## Recursively compute the remaining rows of delta
+  
+  # Compute most prob sequence Z
+  Z = rep(0, T)
+  # start with the last entry of Z
+  Z[T] = which.max(delta[T, ])
+  
+  ## YOUR CODE: 
+  Z[T] = which.max(delta[T,])
+  for (t in (T-1):1){
+    Z[t] = which.max(delta[t,]+log.A[,Z[t+1]])
+  }
+  ## Recursively compute the remaining entries of Z
+  
+  return(Z)
+}
+
+data = genHMM(para0, T)
+mz = 2
+mx = 3
+ini.w = rep(1, mz); ini.w = ini.w / sum(ini.w)
+ini.A = matrix(1, 2, 2); ini.A = ini.A / rowSums(ini.A)
+ini.B = matrix(1:6, 2, 3); ini.B = ini.B / rowSums(ini.B)
+ini.para = list(mz = 2, mx = 3, w = ini.w,
+                A = ini.A, B = ini.B)
+
+myout = myBW(data, ini.para, n.iter = 100)
+myout.Z = myViterbi(data, myout)
+myout.Z[myout.Z==1] = 'A'
+myout.Z[myout.Z==2] = 'B'
+library(HMM)
+hmm0 =initHMM(c("A", "B"), c(1, 2, 3),
+              startProbs = ini.w,
+              transProbs = ini.A, 
+              emissionProbs = ini.B)
+Rout = baumWelch(hmm0, data, maxIterations=100, delta=1E-9, pseudoCount=0)
+Rout.Z = viterbi(Rout$hmm, data)
+myout$A
+Rout$hmm$transProbs
+myout$B
+Rout$hmm$emissionProbs
+sum(myout.Z!=Rout.Z)
+# verify my viterbi with viterbi function of r 
+# Exactly same results
+```
