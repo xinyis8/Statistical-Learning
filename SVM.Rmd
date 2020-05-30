@@ -1,0 +1,135 @@
+---
+title: "Hw542"
+author: "Xinyi Song xinyis8"
+date: "11/11/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(quadprog)
+set.seed(1)
+n=40
+p=2
+xpos=matrix(rnorm(n*p, mean=0, sd=1), n, p) 
+xneg=matrix(rnorm(n*p, mean=4, sd=1), n, p) 
+x=rbind(xpos, xneg)
+y=matrix(c(rep(1, n), rep(-1, n)))
+#dat=as.data.frame(x)
+#dat$y=y
+N=dim(x)[1]
+epsilon=1e-5
+Q=sapply(1:N, function(i) y[i]*t(x)[,i])
+D=t(Q)%*%Q
+d=as.matrix(rep(1,N))
+b0=rbind(0,as.matrix(rep(0,N)))
+amat=rbind(matrix(y, nrow=1, ncol=N),diag(nrow=N))
+amat=t(amat)
+avod=matrix(epsilon*diag(N),nrow=N,ncol=N)
+sol <- solve.QP(D+avod,d,amat,b0,meq=1)
+qpsol<- matrix(sol$solution,nrow=N)
+beta=matrix(0,1,2)
+tmmp1=0
+tmmp2=0
+for (i in 1:N){
+tmmp1=tmmp1+qpsol[i]*y[i]*x[i,1]
+tmmp2=tmmp2+qpsol[i]*y[i]*x[i,2]
+}
+beta=matrix(0,1,2)
+beta[1]=tmmp1
+beta[2]=tmmp2
+beta0=-(max(x[y == -1, ] %*% t(beta)) + min(x[y == 1, ] %*% t(beta)))/2
+#########
+plot(x,col=ifelse(y>0,"darkorange", "deepskyblue"), pch = 19, xlab = "x1", ylab = "x2") 
+legend("topleft", c("Positive","Negative"),
+       col=c("darkorange", "deepskyblue"), pch=c(19, 19), text.col=c("darkorange", "deepskyblue"))
+points(x[44,1], col="black", cex=3)  
+abline(a= -beta0/beta[1,2], b=-beta[1,1]/beta[1,2], col="black", lty=1, lwd = 2)
+abline(a= (-beta0-1)/beta[1,2], b=-beta[1,1]/beta[1,2], col="black", lty=3, lwd = 2)
+abline(a= (-beta0+1)/beta[1,2], b=-beta[1,1]/beta[1,2], col="black", lty=3, lwd = 2)
+# mark the support vectors
+a1=(-beta0-1)/beta[1,2]
+a2=(-beta0+1)/beta[1,2]
+b1=-beta[1,1]/beta[1,2]
+
+```
+# Question 2
+```{r}
+set.seed(1)
+n = 100 # number of data points for each class p = 2 # dimension
+# Generate the positive and negative examples
+xpos <- matrix(rnorm(n*p,mean=0,sd=1),n,p) 
+xneg <- matrix(rnorm(n*p,mean=1.5,sd=1),n,p)
+x <- rbind(xpos,xneg)
+y <- c(rep(-1, n), rep(1, n))
+objective<-function(beta,lambda){
+  l=0
+  for (i in 1:200){
+    l=l+log(1+exp(-y[i]*(beta[1]+beta[2]*x[i,1]+beta[3]*x[i,2])))
+  }
+  result=l+(beta[1]^2+beta[2]^2)*lambda
+  return(result) 
+}
+
+opt=optim(par=c(0,0,0),fn=objective,lambda=0.5,method = "BFGS")
+beta_new=as.matrix(opt$par)
+plot(x,col=ifelse(y>0,"darkorange", "deepskyblue"), pch = 19, xlab = "x1", ylab = "x2") 
+legend("topleft", c("Positive","Negative"),
+       col=c("darkorange", "deepskyblue"), pch=c(19, 19), text.col=c("darkorange", "deepskyblue"))
+
+abline(a=-beta_new[1]/beta_new[3], b=-beta_new[2]/beta_new[3], col="black", lty=1, lwd = 2)
+abline(a= (-beta_new[1]-1)/beta_new[3], b=-beta_new[2]/beta_new[3], col="black",lty=3, lwd = 2)
+abline(a= (-beta_new[1]+1)/beta_new[3], b=-beta_new[2]/beta_new[3], col="black",lty=3, lwd = 2)
+## Try different lambda 
+opt=optim(par=c(0,0,0),fn=objective,lambda=10^(-8),method = "BFGS")
+beta_new=as.matrix(opt$par)
+plot(x,col=ifelse(y>0,"darkorange", "deepskyblue"), pch = 19, xlab = "x1", ylab = "x2") 
+legend("topleft", c("Positive","Negative"),
+       col=c("darkorange", "deepskyblue"), pch=c(19, 19), text.col=c("darkorange", "deepskyblue"))
+
+abline(a=-beta_new[1]/beta_new[3], b=-beta_new[2]/beta_new[3], col="black", lty=1, lwd = 2)
+abline(a= (-beta_new[1]-1)/beta_new[3], b=-beta_new[2]/beta_new[3], col="black",lty=3, lwd = 2)
+abline(a= (-beta_new[1]+1)/beta_new[3], b=-beta_new[2]/beta_new[3], col="black",lty=3, lwd = 2)
+```
+
+
+```{r}
+# Question 3
+library(KRLS)
+set.seed(1)
+n = 400
+p = 2 # dimension
+# Generate the positive and negative examples
+x <- matrix(runif(n*p), n, p)
+side <- (x[, 2] > 0.5 + 0.3*sin(3*pi*x[, 1]))
+y <- sample(c(1, -1), n, TRUE, c(0.9, 0.1))*(side == 1) + sample(c(1, -1), n, TRUE, c(0.1, 0.9))*(side == 0)
+kernelma=function(beta,lambda){
+  km=gausskernel(X=x,sigma=1)
+  l=colSums(log(1+exp(-y*km%*%beta)))
+  result=l+lambda*t(beta)%*%km%*%beta
+  return(result)
+}
+km=gausskernel(X=x,sigma=1)
+opt_1=optim(par=rep(0,n),fn=kernelma, lambda=0.001,method = "BFGS")
+beta_1=as.matrix(opt_1$par)
+y_predict=km%*%beta_1
+y_hat=sign(y_predict)
+plot(x,col=ifelse(y_hat>0,"darkorange", "deepskyblue"), pch = 19, xlab = "x1", ylab = "x2") 
+legend("topleft", c("Positive","Negative"),
+       col=c("darkorange", "deepskyblue"), pch=c(19, 19), text.col=c("darkorange", "deepskyblue"))
+inclass_error_1=mean(y_hat!=y)
+opt_2=optim(par=rep(0,n),fn=kernelma,lambda=0.01,method='BFGS')
+beta_2=as.matrix(opt_2$par)
+y_predict=km%*%beta_2
+y_hat=sign(y_predict)
+plot(x,col=ifelse(y_hat>0,"darkorange", "deepskyblue"), pch = 19, xlab = "x1", ylab = "x2") 
+legend("topleft", c("Positive","Negative"),
+       col=c("darkorange", "deepskyblue"), pch=c(19, 19), text.col=c("darkorange", "deepskyblue"))
+
+inclass_error_2=mean(y_hat!=y)
+print(cbind(inclass_error_1,inclass_error_2))
+```
+
