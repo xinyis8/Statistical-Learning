@@ -1,0 +1,487 @@
+---
+title: "Homework 3"
+author: "Xinyi Song  xinyis8"
+date: "10/06/2019"
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 1 [50 Points] A Simulation Study
+
+We will perform a simulation study to compare the performance of several different spline methods. Consider the following settings:
+
+* Training data n = 30: Generate x from [-1, 1] uniformly, and then generate $\sin(\pi x)+\epsilon$, where ??'s are iid standard normal 
+
+`Solution`
+```{r}
+set.seed(15)
+x=runif(30,-1,1)
+epsilon=rnorm(30,0,1)
+y=sin(pi*x)+epsilon
+```
+
+* Consider several different spline methods:
+
+* Write your own code (you cannot use bs() or similar functions) to implement a continuous piecewise
+linear spline fitting. Choose knots at (-0.5, 0, 0.5)
+
+`Solution`
+
+```{r}
+set.seed(1)
+x=runif(30,-1,1)
+x=sort(x)
+epsilon=rnorm(30,0,1)
+y=sin(pi*x)+epsilon
+pos<-function(x) {x*(x>0)}
+myknots = c(-0.5,0,0.5)
+#bounds = c(-1, myknots,1)  
+basis_func=function(x){
+mybasis = cbind("int" = 1, "x_1" = x, 
+                    "x_2" = pos(x - myknots[1]), 
+                    "x_3" = pos(x - myknots[2]),
+                    "x_4" = pos(x- myknots[3]))
+return(mybasis)
+}
+data=as.data.frame(cbind(x,y))
+#data=data[order(data[,1]),]
+lmfit_linear <- lm(data[,2] ~ .-1, data = data.frame(basis_func(x)))
+par(mar = c(2,3,2,0))  
+plot(data, pch = 19, col = "darkorange")
+lines(data[,1], lmfit_linear$fitted.values, lty = 1, col = "deepskyblue", lwd = 4)
+    abline(v = myknots, lty = 2)
+    title("Piecewise Linear Spline")
+```
+
+* Use existing functions to implement a quadratic spline 2 knots. Choose your own knots.
+
+`Solution`
+
+```{r}
+set.seed(1)
+x=runif(30,-1,1)
+x=sort(x)
+epsilon=rnorm(30,0,1)
+y=sin(pi*x)+epsilon
+data=cbind(x,y)
+myknots = c(-0.5,0.5)
+par(mar = c(2,2,2,0))
+lmfit_qua <- lm(y ~ splines::bs(x,  knots = myknots), data = as.data.frame(data))
+plot(data, pch = 19, col = "darkorange")
+lines(data[,1], lmfit_qua$fitted.values, lty = 1, col = "deepskyblue", lwd = 4)
+title("Quadratic Spline with 2 Knots")
+
+```
+
+* Use existing functions to implement a natural cubic spline with 3 knots. Choose your own knots.
+
+`Solution`
+
+```{r}
+set.seed(1)
+x=runif(30,-1,1)
+epsilon=rnorm(30,0,1)
+x=sort(x)
+y=sin(pi*x)+epsilon
+data=cbind(x,y)
+myknots = c(-0.5,0,0.5)
+par(mar = c(2,2,2,0))
+lmfit_ncs <- lm(y ~ splines::ns(x, df=3, knots = myknots,intercept=FALSE), data = as.data.frame(data))
+plot(data, pch = 19, col = "darkorange")
+lines(data[,1], lmfit_ncs$fitted.values, lty = 1, col = "deepskyblue", lwd = 4)
+title("Cubic Spline with 3 Knots")
+```
+
+
+
+* Use existing functions to implement a smoothing spline. Use the built-in ordinaryleave-one-out-cross-validation to select the best tuning parameter.
+
+`Solution`
+
+```{r}
+library(smooth)
+set.seed(1)
+x=runif(30,-1,1)
+x=sort(x)
+epsilon=rnorm(30,0,1)
+y=sin(pi*x)+epsilon
+data=cbind(x,y)
+fit_ssp = smooth.spline(data[,1], data[,2],cv=TRUE)
+plot(data[,1], data[,2], pch = 19, 
+         xlab = "x", ylab = "y", col = "darkorange")
+y=predict(fit_ssp, as.data.frame(data[,1]))$y
+lines(data[,1], as.matrix(y), col="deepskyblue", lty=1, lwd = 3)
+print(fit_ssp)
+```
+
+*  After fitting these models, evaluate their performances by comparing the fitted functions with the true function value on an equispaced grid of 1000 points on [-1, 1]. Use the squared distance as the metric.
+
+`Solution`
+
+```{r,warning=FALSE}
+x=seq(-1,1,length=1000)
+y=sin(pi*x)
+data=cbind(x,y)
+test_pre_lin=predict(lmfit_linear, data.frame(basis_func(x)))
+test_pre_qua=predict(lmfit_qua, as.data.frame(data))
+test_pre_ncs=predict(lmfit_ncs, as.data.frame(data))
+test_pre_ssp=predict(fit_ssp,as.data.frame(data[,1]))$y
+MSE_lin=mean((as.matrix(test_pre_lin)-as.matrix(y))^2)
+MSE_qua=mean((as.matrix(test_pre_qua)-as.matrix(y))^2)
+MSE_ncs=mean((as.matrix(test_pre_ncs)-as.matrix(y))^2)
+MSE_ssp=mean((as.matrix(test_pre_ssp)-as.matrix(y))^2)
+result=cbind(MSE_lin,MSE_qua,MSE_ncs,MSE_ssp)
+print(result)
+```
+
+*   Repeat the entire process 200 times. Record and report the mean, median, and standard deviation of the errors for each method. Also, provide an informative boxplot that displays the error distribution 1 for all models side-by-side
+
+`Solution`
+
+```{r,warning=FALSE}
+myknots = c(-0.5,0,0.5)
+pos<-function(x) {x*(x>0)}
+basis_func=function(x){
+mybasis = cbind("int" = 1, "x_1" = x, 
+                    "x_2" = pos(x - myknots[1]), 
+                    "x_3" = pos(x - myknots[2]),
+                    "x_4" = pos(x- myknots[3]))
+return(mybasis)
+}
+pre_lin_MSE = matrix(0,200,1)
+for (u in 1:200){
+  set.seed(u)
+  x=runif(30,-1,1)
+ epsilon=rnorm(30,0,1)
+  y=sin(pi*x)+epsilon
+  x=sort(x)
+  data=as.data.frame(cbind(x,y))
+  lmfit_linear <- lm(data[,2] ~ .-1, data = data.frame(basis_func(x)))
+  set.seed(Sys.time())
+  x=seq(-1,1,length=1000)
+  y=sin(pi*x)
+  test_pre_lin=predict(lmfit_linear, data.frame(basis_func(x)))
+  data=as.data.frame(cbind(x,y))
+  pre_lin_MSE[u]=mean((as.matrix(test_pre_lin)-as.matrix(y))^2)
+}
+result_lin=c(mean(pre_lin_MSE),median(pre_lin_MSE),sd(pre_lin_MSE))
+print(result_lin)
+```
+
+
+```{r,warning=FALSE}
+myknots = c(-0.5,0,0.5)
+pos<-function(x) {x*(x>0)}
+basis_func=function(x){
+mybasis = cbind("int" = 1, "x_1" = x, 
+                    "x_2" = pos(x - myknots[1]), 
+                    "x_3" = pos(x - myknots[2]),
+                    "x_4" = pos(x- myknots[3]))
+return(mybasis)
+}
+pre_qua_MSE = matrix(0,200,1)
+for (u in 1:200){
+  set.seed(u)
+x=runif(30,-1,1)
+ epsilon=rnorm(30,0,1)
+  y=sin(pi*x)+epsilon
+  x=sort(x)
+  data=as.data.frame(cbind(x,y))
+  lmfit_qua <- lm(y ~ splines::bs(x,  knots = myknots), data = as.data.frame(data))
+  set.seed(Sys.time())
+  x=seq(-1,1,length=1000)
+  y=sin(pi*x)
+  data=as.data.frame(cbind(x,y))
+  test_pre_qua=predict(lmfit_qua, as.data.frame(data))
+  pre_qua_MSE[u]=mean((as.matrix(test_pre_qua)-as.matrix(y))^2)
+}
+result_qua=c(mean(pre_qua_MSE),median(pre_qua_MSE),sd(pre_qua_MSE))
+print(result_qua)
+```
+
+```{r,warning=FALSE}
+myknots = c(-0.5,0,0.5)
+pos<-function(x) {x*(x>0)}
+basis_func=function(x){
+mybasis = cbind("int" = 1, "x_1" = x, 
+                    "x_2" = pos(x - myknots[1]), 
+                    "x_3" = pos(x - myknots[2]),
+                    "x_4" = pos(x- myknots[3]))
+return(mybasis)
+}
+pre_ncs_MSE = matrix(0,200,1)
+for (u in 1:200){
+  set.seed(u)
+x=runif(30,-1,1)
+ epsilon=rnorm(30,0,1)
+  y=sin(pi*x)+epsilon
+  x=sort(x)
+  data=as.data.frame(cbind(x,y))
+  lmfit_ncs <- lm(y ~ splines::ns(x, df=3, knots = myknots,intercept=FALSE), data = as.data.frame(data))
+  set.seed(Sys.time())
+  x=seq(-1,1,length=1000)
+  y=sin(pi*x)
+  data=as.data.frame(cbind(x,y))
+  test_pre_ncs=predict(lmfit_ncs, as.data.frame(data))
+  pre_ncs_MSE[u]=mean((as.matrix(test_pre_ncs)-as.matrix(y))^2)
+}
+result_ncs=c(mean(pre_ncs_MSE),median(pre_ncs_MSE),sd(pre_ncs_MSE))
+print(result_ncs)
+```
+
+```{r,warning=FALSE}
+library(smooth)
+pre_ssp_MSE = matrix(0,200,1)
+for (u in 1:200){
+  set.seed(u)
+x=runif(30,-1,1)
+ epsilon=rnorm(30,0,1)
+  y=sin(pi*x)+epsilon
+  x=sort(x)
+  data=as.data.frame(cbind(x,y))
+ fit_ssp = smooth.spline(data[,1], data[,2],cv=TRUE)
+  set.seed(Sys.time())
+  x=seq(-1,1,length=1000)
+  y=sin(pi*x)
+  data=as.data.frame(cbind(x,y))
+  test_pre_ssp=predict(fit_ssp,as.data.frame(data[,1]))$y
+  pre_ssp_MSE[u]=mean((as.matrix(test_pre_ssp)-as.matrix(y))^2)
+}
+result_ssp=c(mean(pre_ssp_MSE),median(pre_ssp_MSE),sd(pre_ssp_MSE))
+print(result_ssp)
+# Boxplot 
+result=cbind(pre_lin_MSE,pre_qua_MSE,pre_ncs_MSE,pre_ssp_MSE)
+boxplot(result,data=result, main="MSE of Four Models", xlab="Model", ylab="MSE",col=c("gold","darkgreen","red","grey"),names=c("Linear","Quadratic","Cubic","Smooth"),ylim=c(-0.2,5))
+```
+
+* Comment on your findings. Which method would you prefer?
+
+`Solution`
+
+Based on the results above, we can see that for the results of the MSE from 200 iterations, smoothing spline performs best, next is natural cubic spline and linear spline in terms of mean, median and standard deviation of MSE, there are not much differences between them. However, quadratic spline performs not as good as the other three methods. It is not stable.
+
+
+
+
+## Question 2 [50 Points] Multi-dimensional Kernel and Bandwidth Selection
+
+Let's consider a regression problem with multiple dimensions. For this problem, we will use the Combined Cycle Power Plant (CCPP) Data Set available at the UCI machine learning repository. The goal is to predict the net hourly electrical energy output (EP) of the power plant. Four variables are available: Ambient Temperature (AT), Ambient Pressure (AP), Relative Humidity (RH), and Exhaust Vacuum (EV). For more details, please go to the 
+[dataset webpage](https://archive.ics.uci.edu/ml/datasets/Combined+Cycle+Power+Plant). We will use a kernel method to model the outcome. A multivariate Gaussian kernel function defines the distance between two points:
+
+$$ K_{\boldsymbol \lambda}(x_i, x_j) = e^{-\frac{1}{2} \sum_{k=1}^p \left((x_{ik} - x_{jk})/\lambda_k\right)^2}$$
+The most crucial element in kernel regression is the bandwidth $\lambda_k$. A popular choice is the Silverman formula. The bandwidth for the $k$th variable is given by
+
+$$\lambda_k = \left(\frac{4}{p+2}\right)^{\frac{1}{p+4}} n^{-\frac{1}{p+4}} \, \, \widehat \sigma_k,$$
+where $\widehat\sigma_k$ is the estimated standard deviation for variable $k$, $p$ is the number of variables, and $n$ is the sample size. Based on this kernel function, use the Nadaraya-Watson kernel estimator to fit and predict the data. You should consider the following:
+
+* Randomly select 2/3 of the data as training data, and rest as testing. Make sure you set a random seed. You do not need to repeat this process --- just fix it and complete the rest of the questions
+
+`Solution`
+
+```{r}
+library(readxl)
+set.seed(15)
+Folds5x2_pp <- read.csv("~/Desktop/2019 Fall/STAT 542/HW3/CCPP/Folds5x2_pp.csv")
+set.seed(542)
+id = sample(1:nrow(Folds5x2_pp),ceiling((dim(Folds5x2_pp)[1])*2/3),replace = FALSE)
+train_dat=Folds5x2_pp[id,]
+test_dat=Folds5x2_pp[-id,]
+train_dat=as.matrix(train_dat)
+test_dat=as.matrix(test_dat)
+```
+
+* Fit the model on the training samples using the kernel estimator and predict on the testing sample. Calculate the prediction error and compare this to a linear model
+
+`Solution`
+
+```{r}
+library(readxl)
+Folds5x2_pp <- read.csv("~/Desktop/2019 Fall/STAT 542/HW3/CCPP/Folds5x2_pp.csv")
+set.seed(542)
+id = sample(1:nrow(Folds5x2_pp),ceiling((dim(Folds5x2_pp)[1])*2/3),replace = FALSE)
+train_dat=Folds5x2_pp[id,]
+test_dat=Folds5x2_pp[-id,]
+train_dat=as.matrix(train_dat)
+test_dat=as.matrix(test_dat)
+p=dim(Folds5x2_pp)[2]-1
+n=nrow(train_dat)
+sigma=as.matrix(apply(train_dat[,1:4],2,sd))
+X=train_dat[,1:4]
+x=test_dat[,1:4]
+Y=train_dat[,5]
+lamd=apply(sigma,1,function(h) (4/(p+2))^(1/(p+4))*(n^((-1)/(p+4)))*h )
+predict_kernel=function(z){
+temp = sweep(X,2,z,'-')
+temp2 = (sweep(temp, 2, lamd, '/'))^2
+temp3=as.matrix(apply(temp2,1,sum))
+temp4=apply(temp3,1,function(x) exp(-0.5*x))
+pre=t(temp4)%*%as.matrix(train_dat[,5])/sum(temp4)
+return(pre)
+}
+effi_pre=apply(x,1,predict_kernel)
+fit<-lm(train_dat[,5]~AT+V+AP+RH,data=as.data.frame(train_dat))
+lin_pre=predict(fit,as.data.frame(test_dat), type = "response")
+lin_pre=as.matrix(lin_pre)
+result=cbind(effi_pre,lin_pre)
+true_test=as.matrix(test_dat[,5])
+MSE_linear=mean((lin_pre-true_test)^2)
+MSE_kernel=mean((effi_pre-true_test)^2)
+fin=cbind(MSE_kernel,MSE_linear)
+print(fin)
+```
+
+Comments: 
+
+Based on the results above, we can see that Kernel estimation performs better than linear estimation in terms of MSE.
+
+
+* The bandwidth selection may not be optimal in practice. Experiment a few choices and see if you can achieve a better result. 
+
+* During all calculations, make sure that you write your code efficiently to improve computational performance
+
+`Solution`
+
+Here, I experimented three kinds of bandwidth.
+The first one is based on Silverman's (1986) rule of thumb. 
+
+If Gaussian basis functions are used to approximate univariate data, and the underlying density being estimated is Gaussian, the optimal choice for h (that is, the bandwidth that minimises the mean integrated squared error) 
+is where ${\hat {\sigma }}$ is the standard deviation of the samples. This approximation is termed the normal distribution approximation, Gaussian approximation, or Silverman's (1986) rule of thumb. 
+
+$$
+\lambda_{j}=\left(\frac{4\hat\sigma_{j}^5}{3n}\right)^\frac{1}{5}
+$$
+
+
+```{r}
+p=dim(Folds5x2_pp)[2]-1
+n=nrow(train_dat)
+sigma=as.matrix(apply(train_dat[,1:4],2,sd))
+X=train_dat[,1:4]
+x=test_dat[,1:4]
+Y=train_dat[,5]
+lamd=apply(sigma,1,function(h) (4*h^5/3/n)^(1/5))
+predict_kernel=function(z){
+temp = sweep(X,2,z,'-')
+temp2 = (sweep(temp, 2, lamd, '/'))^2
+temp3=as.matrix(apply(temp2,1,sum))
+temp4=apply(temp3,1,function(x) exp(-0.5*x))
+pre=t(temp4)%*%as.matrix(train_dat[,5])/sum(temp4)
+return(pre)
+}
+effi_pre=apply(x,1,predict_kernel)
+fit<-lm(train_dat[,5]~AT+V+AP+RH,data=as.data.frame(train_dat))
+lin_pre=predict(fit,as.data.frame(test_dat), type = "response")
+lin_pre=as.matrix(lin_pre)
+result=cbind(effi_pre,lin_pre)
+true_test=as.matrix(test_dat[,5])
+MSE_linear=mean((lin_pre-true_test)^2)
+MSE_kernel=mean((effi_pre-true_test)^2)
+fin=cbind(MSE_kernel,MSE_linear)
+print(fin)
+```
+
+The second bandwidth is as following: 
+
+If f is Normal with mean 0 and variance $\sigma^2$ then the Normal scale AMSE-optimal bandwidth selector for is given by 
+
+
+$$
+\hat\lambda_{j}=\left[\frac{\sqrt\pi R(K)}{\mu ^2(K)}\right]\hat\sigma_{j} n^{-\frac{2}{5}}
+$$
+If Gaussian kernel is chosen, that is, K(.) is the density of standard Normal distribution, then $R(K)=\frac{1}{2}\sqrt \pi$ and $\mu_{2}(K)=1$. Hence it is simplified to
+
+$$
+\hat\lambda_{j}=8^{\frac{1}{5}}\hat\sigma_{j} n^{-\frac{2}{5}}
+$$
+
+
+```{r}
+p=dim(Folds5x2_pp)[2]-1
+n=nrow(train_dat)
+sigma=as.matrix(apply(train_dat[,1:4],2,sd))
+X=train_dat[,1:4]
+x=test_dat[,1:4]
+Y=train_dat[,5]
+lamd=apply(sigma,1,function(h) 8^(1/5)*h*n^(-2/5))
+predict_kernel=function(z){
+temp = sweep(X,2,z,'-')
+temp2 = (sweep(temp, 2, lamd, '/'))^2
+temp3=as.matrix(apply(temp2,1,sum))
+temp4=apply(temp3,1,function(x) exp(-0.5*x))
+pre=t(temp4)%*%as.matrix(train_dat[,5])/sum(temp4)
+return(pre)
+}
+effi_pre=apply(x,1,predict_kernel)
+fit<-lm(train_dat[,5]~AT+V+AP+RH,data=as.data.frame(train_dat))
+lin_pre=predict(fit,as.data.frame(test_dat), type = "response")
+lin_pre=as.matrix(lin_pre)
+result=cbind(effi_pre,lin_pre)
+true_test=as.matrix(test_dat[,5])
+MSE_linear=mean((lin_pre-true_test)^2)
+MSE_kernel=mean((effi_pre-true_test)^2)
+fin=cbind(MSE_kernel,MSE_linear)
+print(fin)
+```
+
+The third bandwidth is as following:
+
+If f is Normal with mean $\mu$ and variance $\sigma^2$ then the Normal scale AMSE-optimal bandwidth selector is given by 
+
+$$
+\lambda_{j}=\left[\left(2+\frac{\hat \sigma^2}{\hat \mu ^2}\right)\frac{8\sqrt{\pi}R(K)}{\mu_{2}^2(K)}\right]^{\frac{1}{5}}\hat \sigma_{j}n^{-\frac{2}{5}}
+$$
+
+where $\hat\sigma$ is an estimate of $\sigma$ and $\hat\mu$ is an estimate of $\mu$. If $\hat \sigma=s$ (sample standard deviation) and $\hat mu=\bar x$ (sample mean) then it can be rewritten as:
+
+$$
+\lambda_{j}=\left[\left(2+\hat c_{v}^2\right)\frac{8\sqrt{\pi}R(K)}{\mu_{2}^2(K)}\right]^{\frac{1}{5}}\hat \sigma_{j}n^{-\frac{2}{5}}
+$$
+
+where $\hat c_{v}=\frac{s}{\bar x}$ is the coefficient of variation (CV). 
+
+When kernel function  is the density of standard Normal distribution, then the "Rule-of-Thumb"" bandwidth selector for kernel location estimation is
+
+$$
+\lambda_{j}=\left(4(2+\hat c_{v}^2)\right)^{\frac{1}{5}}\hat \sigma_{j} n^{-\frac{2}{5}}
+$$
+
+
+```{r}
+p=dim(Folds5x2_pp)[2]-1
+n=nrow(train_dat)
+sigma=as.matrix(apply(train_dat[,1:4],2,sd))
+X=train_dat[,1:4]
+x=test_dat[,1:4]
+Y=train_dat[,5]
+lamd=apply(sigma,1,function(h) (4*(2+sd(X)/mean(X)))^(1/5)*h*n^(-2/5))
+predict_kernel=function(z){
+temp = sweep(X,2,z,'-')
+temp2 = (sweep(temp, 2, lamd, '/'))^2
+temp3=as.matrix(apply(temp2,1,sum))
+temp4=apply(temp3,1,function(x) exp(-0.5*x))
+pre=t(temp4)%*%as.matrix(train_dat[,5])/sum(temp4)
+return(pre)
+}
+effi_pre=apply(x,1,predict_kernel)
+fit<-lm(train_dat[,5]~AT+V+AP+RH,data=as.data.frame(train_dat))
+lin_pre=predict(fit,as.data.frame(test_dat), type = "response")
+lin_pre=as.matrix(lin_pre)
+result=cbind(effi_pre,lin_pre)
+true_test=as.matrix(test_dat[,5])
+MSE_linear=mean((lin_pre-true_test)^2)
+MSE_kernel=mean((effi_pre-true_test)^2)
+fin=cbind(MSE_kernel,MSE_linear)
+print(fin)
+```
+
+Comments: Based on the results above, we can find that for the three kinds of bandwidth experimented, Silverman bandwidth performs best whose kernel_MSE is 15.6696. 
+
+## Reference
+
+Optimal Bandwidth Selection: https://www.hindawi.com/journals/jps/2015/242683/
+Silverman Bandwidth Selecton: https://en.wikipedia.org/wiki/Kernel_density_estimation
