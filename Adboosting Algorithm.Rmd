@@ -1,0 +1,245 @@
+---
+title: "HW7_xinyis8"
+author: "Xinyi Song xinyis8"
+date: "11/25/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+set.seed(1)
+n = 300
+x = runif(n)
+py <- function(x) sin(4*pi*x)/3 + 0.5
+y = (rbinom(n, 1, py(x))-0.5)*2
+# Generate test data
+test_x=seq(0,1,length.out = 1000)
+test_y=(rbinom(1000, 1, py(test_x))-0.5)*2
+# initialize weight
+w=matrix(1/n,n,1)
+# c_select function: 
+# choose optimal x with largest corresponding score value
+shrink=0.1
+adaboost_shrink=function(shrink){
+  c_select=function(X,Y,w){
+    score = matrix(0,length(Y),1)
+    for (i in 1:length(Y)){
+      if (i<=(length(Y)-1)){
+        c=X[i]
+        n=length(Y)
+        X_left=X[which(X<=c)]
+        Y_left=as.matrix(Y[which(X<=c)])    
+        M=as.matrix(as.numeric(Y_left==1))
+        left=sweep(M,1,as.matrix(w[which(X<=c)]),"*")
+        p_left =sum(left)/sum(as.matrix(w[which(X<=c)]))
+        gini_left=p_left*(1-p_left)
+        X_right=X[which(X>c)]
+        Y_right=as.matrix(Y[which(X>c)])
+        N=as.matrix(as.numeric(Y_right==1))
+        right=sweep(N,1,as.matrix(w[which(X>c)]),"*")
+        p_right =sum(right)/sum(as.matrix(w[which(X>c)]))
+        gini_right=p_right*(1-p_right)
+        score[i]=(-1)*sum(as.matrix(w[which(X<=c)]))*gini_left/sum(w)+(-1)*sum(as.matrix(w[which(X>c)]))*gini_right/sum(w)
+      }
+      else{
+        c=X[i]
+        n=length(Y)
+        X_left=X[1:i]
+        Y_left=as.matrix(Y[1:i])
+        M=as.matrix(as.numeric(Y_left==1))
+        left=sweep(M,1,as.matrix(w[1:i]),"*")
+        p_left =sum(left)/sum(as.matrix(w[1:i]))
+        gini_left=p_left*(1-p_left)
+        score[i]=(-1)*sum(as.matrix(w[1:i]))*gini_left/sum(w)+0
+      }
+    }
+    c_ind=which.max(score)
+    c_val=X[which.max(score)]
+    return(c(c_ind,c_val))
+  }
+  t=c_select(x,y,w)
+  CVALUE=c()
+  ALPHA=c()
+  LEFT=c()
+  RIGHT=c()
+  Loss=c()
+  itr=0
+  f_x=0
+  loss_ln=0
+  LOS = matrix(0,1000,1)
+for (s in 1:1000){
+    t=c_select(x,y,w)
+    c=t[2]
+    CVALUE=c(CVALUE,c)
+    n=length(y)
+    x=as.matrix(x)
+    y=as.matrix(y)
+    y_left=as.matrix(y[which(x<=c)])
+    y_right=as.matrix(y[which(x>c)])
+    d=sweep(y_left,1,w[which(x<=c)],'*')
+    posi_we_lab=sum(d[which(d>0)])
+    nega_we_lab=sum(d[which(d<0)])
+    y_pred=matrix(0,length(y),1)
+    if(abs(posi_we_lab)<abs(nega_we_lab)){
+      y_pred[which(x<=c)]=-1
+      left=-1
+    }else{
+      y_pred[which(x<=c)]=1
+      left=1
+    }
+    h=sweep(y_right,1,w[which(x>c)],'*')
+    posi_right_lab=sum(h[which(h>0)])
+    nega_right_lab=sum(h[which(h<0)])
+    if(abs(posi_right_lab)<abs(nega_right_lab)){
+      y_pred[which(x>c)]=-1
+      right=-1
+    }else{
+      y_pred[which(x>c)]=1
+      right=1
+    }
+    LEFT = c(LEFT,left)
+    RIGHT = c(RIGHT,right)
+    ep=as.matrix(as.numeric(y_pred!=y))
+    g=sweep(ep,1,as.matrix(w),"*")
+    epsilon=sum(sweep(ep,1,as.matrix(w),"*"))
+    alpha=1/2*log((1-epsilon)/epsilon)
+    ALPHA=c(ALPHA,alpha)
+    f_x=alpha*y_pred+f_x
+    z=sum(w*exp(-alpha*y*y_pred))
+    w=(w/z)*exp(-shrink*alpha*y*y_pred)
+    itr= itr+1
+    loss_ln=loss_ln+(-shrink*y*y_pred*alpha)
+    loss=sum(exp(loss_ln))/n
+    LOS[s]=loss
+  }
+  return(list(LOS,(f_x),ALPHA,CVALUE,LEFT,RIGHT,sign(f_x)))
+}
+
+## shrinkage = 0.1
+result_shrink_1=adaboost_shrink(0.1)
+loss_1=result_shrink_1[[1]]
+Y=y[order(x)]
+X=x[order(x)]
+predval_1=result_shrink_1[[2]]
+predval_1=predval_1[order(x)]
+pred_val_1= sign(result_shrink_1[[2]])
+pred_val_1=pred_val_1[order(x)]
+# Accuracy with shrinkage = 0.1
+accuracy_1=mean(Y==pred_val_1)
+print(accuracy_1)
+## shrinkage = 0.5
+result_shrink_2=adaboost_shrink(0.5)
+loss_2=result_shrink_2[[1]]
+Y=y[order(x)]
+X=x[order(x)]
+predval_2=result_shrink_2[[2]]
+pred_val_2= sign(result_shrink_2[[2]])
+pred_val_2=pred_val_2[order(x)]
+# Accuracy with shrinkage = 0.5
+accuracy_2=mean(Y==pred_val_2)
+print(accuracy_2)
+par(mfrow=c(2,2))
+plot(loss_1,xlab='Iteration Times',ylab='Loss',main='Loss of Train Data with shrinkage 0.1')
+plot(loss_2,xlab='Iteration Times',ylab='Loss',main='Loss of Train Data with shrinkage 0.5')
+plot(X, Y+0.1*runif(300, -1, 1), ylim = c(-1.1, 1.1), pch = 19, col = ifelse(Y == 1, "darkorange", "deepskyblue"), ylab = "y")
+lines(X, pred_val_1, lwd = 3, col = "blue")
+plot(X, Y+0.1*runif(300, -1, 1), ylim = c(-1.1, 1.1), pch = 19, col = ifelse(Y == 1, "darkorange", "deepskyblue"), ylab = "y")
+lines(X, pred_val_2, lwd=2, col = "blue")
+
+### Test part 
+# shrinkage = 0.1
+test_Y=test_y[order(test_x)]
+test_X=test_x[order(test_x)]
+LEFT=result_shrink_1[[5]]
+RIGHT=result_shrink_1[[6]]
+CVALUE=result_shrink_1[[4]] 
+ALPHA=result_shrink_1[[3]]
+# iteration 1000 times with shrinkage = 0.1 
+pred=matrix(rep(0,length(test_y)*1000),nrow=1000,byrow=FALSE)
+for (m in 1:length(test_y)){
+  for (n in 1:1000){
+    if (test_x[m]<CVALUE[n]){
+      pred[m,n]=LEFT[n]
+    }
+    else{
+      pred[m,n]=RIGHT[n]
+    }
+  }
+}
+pred_val_test_1=pred%*%ALPHA
+pred_test_class_1=sign(pred%*%ALPHA)
+test_loss_1=matrix(0,1000,1)
+tmp=0
+for (i in 1:1000){
+  tmp=tmp+(-0.1)*test_y*(pred[,i]*ALPHA[i])
+  test_loss_1[i]=sum(exp(tmp))/length(test_y)
+}
+test_accuracy_1=mean(pred_test_class_1==test_Y)
+print(test_accuracy_1)
+pred_test_val_plot_1=pred_val_test_1[order(test_x)]
+test_predplot_1=pred_test_class_1[order(test_x)]
+par(mfrow=c(2,2))
+plot(loss_1,xlab='Iteration Times',ylab='Loss',main='Loss of Train Data with shrinkage 0.5')
+plot(test_loss_1,xlab='Iteration Times',ylab='Loss',main='Loss of Test Data with shrinkage 0.5',ylim = c(0.92,0.99))
+plot(X, Y+0.1*runif(300, -1, 1), ylim = c(-1.1, 1.1), pch = 19, col = ifelse(Y == 1, "darkorange", "deepskyblue"), ylab = "train_y")
+lines(X, pred_val_1, lwd = 2, col = "blue")
+title("Adaboost for Train with shrinkage= 0.1")
+plot(test_X,test_Y+0.1*runif(1000, -1, 1), ylim = c(-1.1, 1.1), pch = 19, col = ifelse(test_Y == 1, "darkorange", "deepskyblue"), ylab = "test_y")
+lines(test_X,pred_val_test_1, lwd = 2, col = "red")
+lines(test_X, pred_test_class_1, lwd = 3, col = "blue")
+title("Adaboost for Test with shrinkage= 0.1")
+# shrinkage = 0.5
+LEFT=result_shrink_2[[5]]
+RIGHT=result_shrink_2[[6]]
+CVALUE=result_shrink_2[[4]] 
+ALPHA=result_shrink_2[[3]]
+# iteration 1000 times with shrinkage = 0.1 
+pred=matrix(rep(0,length(test_y)*1000),nrow=1000,byrow=FALSE)
+for (m in 1:length(test_y)){
+  for (n in 1:1000){
+    if (test_x[m]<CVALUE[n]){
+      pred[m,n]=LEFT[n]
+    }
+    else{
+      pred[m,n]=RIGHT[n]
+    }
+  }
+}
+pred_val_test_2=pred%*%ALPHA
+pred_test_class_2=sign(pred%*%ALPHA)
+test_loss_2=matrix(0,1000,1)
+tmp=0
+for (i in 1:1000){
+  tmp=tmp+(-0.5)*test_y*(pred[,i]*ALPHA[i])
+  test_loss_2[i]=sum(exp(tmp))/length(test_y)
+}
+test_accuracy_2=mean(pred_test_class_2==test_Y)
+print(test_accuracy_2)
+pred_test_val_plot_2=pred_val_test_2[order(test_x)]
+test_predplot_2=pred_test_class_2[order(test_x)]
+# Plot loss of both training data and test data with shrinkage = 0.5
+par(mfrow=c(2,2))
+plot(loss_2,xlab='Iteration Times',ylab='Loss',main='Loss of Train Data with shrinkage 0.5')
+plot(test_loss_2,xlab='Iteration Times',ylab='Loss',main='Loss of Test Data with shrinkage 0.5',ylim = c(0.92,0.99))
+plot(X, Y+0.1*runif(300, -1, 1), ylim = c(-1.1, 1.1), pch = 19, col = ifelse(Y == 1, "darkorange", "deepskyblue"), ylab = "train_y")
+lines(X, pred_val_2, lwd = 2, col = "red")
+title("Adaboost for Train with shrinkage= 0.5")
+plot(test_X,test_Y+0.1*runif(1000, -1, 1), ylim = c(-1.1, 1.1), pch = 19, col = ifelse(test_Y == 1, "darkorange", "deepskyblue"), ylab = "test_y")
+lines(test_X,pred_val_test_2, lwd = 2, col = "red")
+lines(test_X, pred_test_class_2, lwd = 3, col = "blue")
+title("Adaboost for Data with shrinkage= 0.5")
+```
+
+Comments: 
+
+Here, I choose to iterate 1000 times to reach the final result. And I try two shrinkage values, one is 0.1 and the other is 0.5. 
+
+Based on the plots above, I can find that the plot of loss of train data with shrinkage = 0.1 is more smooth than that of 0.5. And with iteration times being equal, larger shrinkage value will decrease the loss more than smaller shrinkage value does. 
+
+Besides, for loss plot of test data, we can see that for both situation with shrinkage = 0.5 and shrinkage= 0.1, as the iteration time increases, the loss decreases first and then increases, which indicates overfitting when the iteration times are too large. 
+
+And the accuracy of traindata is 0.74 with shrinkage=0.1 and 0.75 with shrinkage = 0.5, and their test accuracy is 0.69 with shrinkage=0.1 and 0.692 with shrinkage=0.5, which verifies my performance of algorithms. 
+
