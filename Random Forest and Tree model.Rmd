@@ -1,0 +1,435 @@
+---
+title: "Homework4"
+author: "Xinyi Song xinyis8"
+date: "10/13/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## Question 1 [70 Points] Tuning Random Forests in Virtual Twins
+
+Personalized medicine draws a lot of attention in medical research. The goal of personalized medicine is to make a tailored decision for each patient, such that his/her clinical outcome can be optimized. Let's consider data modified from the [SIDES method](http://biopharmnet.com/subgroup-analysis-software/). In this dataset, 470 patients and 13 variables are observed. You can download the data from our website. The variables are listed below. 
+
+* `Health`: health outcome (larger the better)
+* `THERAPY`: 1 for active treatment, 0 for the control treatment
+* `TIMFIRST`: Time from first sepsis-organ fail to start drug
+* `AGE`: Patient age in years
+* `BLLPLAT`: Baseline local platelets
+* `blSOFA`: Sum of baseline sofa score (cardiovascular, hematology, hepatorenal, and respiration scores)
+* `BLLCREAT`: Base creatinine
+* `ORGANNUM`: Number of baseline organ failures
+* `PRAPACHE`: Pre-infusion apache-ii score
+* `BLGCS`: Base GLASGOW coma scale score
+* `BLIL6`: Baseline serum IL-6 concentration
+* `BLADL`: Baseline activity of daily living score
+* `BLLBILI`: Baseline local bilirubin
+* `BEST`: The true best treatment suggested by Doctors. __You should not use this variable when fitting the model__!
+
+For each patient, sepsis was observed during their hospital stay. Hence, they need to choose one of the two treatments (indicated by variable `THERAPY`) to prevent further adverse events. After the treatment, their health outcome (`health`) were measured, with a larger value being the better outcome. However, since treatments were assigned randomly, we are not able to suggest better treatment for a new patient. A strategy called [Virtual Twins](https://onlinelibrary.wiley.com/doi/abs/10.1002/sim.4322) was proposed by Foster et al. (2011) to tackle this problem. We consider a simpler version of the method. We fit two random forests to model the outcome `health`: one model uses all patients who received treatment 1, and another model for all patients who received treatment 0. Denote these two models as $\widehat f_1(x)$ and $\widehat f_0(x)$, respectively. When a new patient arrives, we use both models to predict the outcomes and see which model gives a better health status. We will suggest the treatment label associated with the model that gives a larger prediction value. In other words, for a new $x^\ast$, we compare $\widehat f_1(x^\ast)$ and $\widehat f_0(x^\ast)$ and suggest the better lable. The goal for this question is to select tuning parameters for random forest such that it will suggest the best treatment for a patient. Perform the following:
+
+* Randomly split the data into 75% for training and 25% for testing.
+
+```{r}
+set.seed(1)
+Sepsis <- read.csv("~/Desktop/2019 Fall/STAT 542/HW4/Sepsis.csv", header=TRUE)
+# Randomly split the data into 75% for training and 25% for testing.
+id = sample(1:nrow(Sepsis),ceiling((dim(Sepsis)[1])*0.75),replace = FALSE)
+train_dat=Sepsis[id,]
+therapy_train=train_dat[which(train_dat[,3]==1),]
+None_train=train_dat[which(train_dat[,3]==0),]
+test_dat=Sepsis[-id,]
+#therapy_test=test_dat[which(test_dat[,3]==1),]
+#None_test=test_dat[which(test_dat[,3]==0),]
+# Pick three different mtry values and three different nodesize
+```
+
+* For the training data, fit the virtual twins model and then use the testing data to suggest the best treatment. 
+  + You should not use the variable `BEST` when fitting the models
+  + Pick three different `mtry` values and three different `nodesize`, leave all other tuning parameters as default
+  + After predicting the best treatment in the testing data, compare it to the truth `BEST`
+  
+`Solution`
+```{r}
+library(randomForest)
+set.seed(1)
+# thterapy_train_data
+model_1<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data = therapy_train, nodesize = 20, mtry = 4)
+model_2<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =therapy_train, nodesize =20, mtry = 8)
+model_3<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =therapy_train, nodesize =20, mtry = 10)
+model_4<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data = therapy_train, nodesize = 30, mtry = 4)
+model_5<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =therapy_train, nodesize =30, mtry = 8)
+model_6<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =therapy_train, nodesize =30, mtry = 10)
+model_7<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data = therapy_train, nodesize = 50, mtry = 4)
+model_8<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =therapy_train, nodesize =50, mtry = 8)
+model_9<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =therapy_train, nodesize =50, mtry = 10)
+# None_train_data
+fit_1<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data = None_train, nodesize = 20, mtry = 4)
+fit_2<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =None_train, nodesize =20, mtry = 8)
+fit_3<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =None_train, nodesize =20, mtry = 10)
+fit_4<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data = None_train, nodesize = 30, mtry = 4)
+fit_5<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =None_train, nodesize =30, mtry = 8)
+fit_6<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =None_train, nodesize =30, mtry = 10)
+fit_7<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data = None_train, nodesize = 50, mtry = 4)
+fit_8<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =None_train, nodesize =50, mtry = 8)
+fit_9<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =None_train, nodesize =50, mtry = 10)
+# Prediction 
+pred_1<- predict(model_1, test_dat)
+pred_2<- predict(model_2, test_dat)
+pred_3<- predict(model_3, test_dat)
+pred_4<- predict(model_4, test_dat)
+pred_5<- predict(model_5, test_dat)
+pred_6<- predict(model_6, test_dat)
+pred_7<- predict(model_7, test_dat)
+pred_8<- predict(model_8, test_dat)
+pred_9<- predict(model_9, test_dat)
+pre_1<- predict(fit_1, test_dat)
+pre_2<- predict(fit_2, test_dat)
+pre_3<- predict(fit_3, test_dat)
+pre_4<- predict(fit_4, test_dat)
+pre_5<- predict(fit_5, test_dat)
+pre_6<- predict(fit_6, test_dat)
+pre_7<- predict(fit_7, test_dat)
+pre_8<- predict(fit_8, test_dat)
+pre_9<- predict(fit_9, test_dat)
+true=test_dat[,3]
+n=cbind(as.matrix(pred_1),as.matrix(pre_1)) # Therapy ++ Non-therapy
+R=matrix(0,nrow(test_dat),1)
+for (j in 1:nrow(test_dat)){
+  if(n[j,1]>=n[j,2]){
+    R[j]=1
+  }
+  else{
+    R[j]=0
+  }
+}
+accuracy_1=mean(R==test_dat[,15])
+# Model 2 VS Fit 2
+m=cbind(as.matrix(pred_2),as.matrix(pre_2)) # Therapy ++ Non-therapy
+m=as.data.frame(m)
+m$id=rownames(m)
+G=matrix(0,nrow(test_dat),1)
+for (j in 1:nrow(test_dat)){
+  if(m[j,1]>=m[j,2]){
+    G[j]=1
+  }
+  else{
+    G[j]=0
+  }
+}
+accuracy_2=mean(G==test_dat[,15])
+l=cbind(as.matrix(pred_3),as.matrix(pre_3)) # Therapy ++ Non-therapy
+l=as.data.frame(l)
+l$id=rownames(l)
+L=matrix(0,nrow(test_dat),1)
+for (j in 1:nrow(test_dat)){
+  if(l[j,1]>=l[j,2]){
+    L[j]=1
+  }
+  else{
+    L[j]=0
+  }
+}
+accuracy_3=mean(L==test_dat[,15])
+p=cbind(as.matrix(pred_4),as.matrix(pre_4)) # Therapy ++ Non-therapy
+p=as.data.frame(p)
+p$id=rownames(p)
+P=matrix(0,nrow(test_dat),1)
+for (j in 1:nrow(test_dat)){
+  if(p[j,1]>=p[j,2]){
+    P[j]=1
+  }
+  else{
+    P[j]=0
+  }
+}
+accuracy_4=mean(P==test_dat[,15])
+u=cbind(as.matrix(pred_5),as.matrix(pre_5)) # Therapy ++ Non-therapy
+u=as.data.frame(u)
+p$id=rownames(p)
+U=matrix(0,nrow(test_dat),1)
+for (j in 1:nrow(test_dat)){
+  if(u[j,1]>=u[j,2]){
+    U[j]=1
+  }
+  else{
+    U[j]=0
+  }
+}
+accuracy_5=mean(U==test_dat[,15])
+u=cbind(as.matrix(pred_6),as.matrix(pre_6)) # Therapy ++ Non-therapy
+u=as.data.frame(u)
+p$id=rownames(p)
+U=matrix(0,nrow(test_dat),1)
+for (j in 1:nrow(test_dat)){
+  if(u[j,1]>=u[j,2]){
+    U[j]=1
+  }
+  else{
+    U[j]=0
+  }
+}
+accuracy_6=mean(U==test_dat[,15])
+u=cbind(as.matrix(pred_7),as.matrix(pre_7)) # Therapy ++ Non-therapy
+u=as.data.frame(u)
+p$id=rownames(p)
+U=matrix(0,nrow(test_dat),1)
+for (j in 1:nrow(test_dat)){
+  if(u[j,1]>=u[j,2]){
+    U[j]=1
+  }
+  else{
+    U[j]=0
+  }
+}
+accuracy_7=mean(U==test_dat[,15])
+u=cbind(as.matrix(pred_8),as.matrix(pre_8)) # Therapy ++ Non-therapy
+u=as.data.frame(u)
+p$id=rownames(p)
+U=matrix(0,nrow(test_dat),1)
+for (j in 1:nrow(test_dat)){
+  if(u[j,1]>=u[j,2]){
+    U[j]=1
+  }
+  else{
+    U[j]=0
+  }
+}
+accuracy_8=mean(U==test_dat[,15])
+u=cbind(as.matrix(pred_9),as.matrix(pre_9)) # Therapy ++ Non-therapy
+U=matrix(0,nrow(test_dat),1)
+for (j in 1:nrow(test_dat)){
+  if(u[j,1]>=u[j,2]){
+    U[j]=1
+  }
+  else{
+    U[j]=0
+  }
+}
+accuracy_9=mean(U==test_dat[,15])
+Accuracy=c(accuracy_1,accuracy_2,accuracy_3,accuracy_4,accuracy_5,accuracy_6,accuracy_7,accuracy_8,accuracy_9)
+print(Accuracy)
+```
+
+* Repeat this entire process 100 times and average the prediction errors
+
+`Solution`
+
+```{r}
+accuracy=matrix(0,100,9)
+set.seed(1)
+for (ss in 1:100){
+  set.seed(1)
+  model_1<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data = therapy_train, nodesize = 20, mtry = 4)
+  model_2<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =therapy_train, nodesize =20, mtry = 8)
+  model_3<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =therapy_train, nodesize =20, mtry = 10)
+  model_4<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data = therapy_train, nodesize = 30, mtry = 4)
+  model_5<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =therapy_train, nodesize =30, mtry = 8)
+  model_6<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =therapy_train, nodesize =30, mtry = 10)
+  model_7<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data = therapy_train, nodesize = 50, mtry = 4)
+  model_8<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =therapy_train, nodesize =50, mtry = 8)
+  model_9<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =therapy_train, nodesize =50, mtry = 10)
+  # None_train_data
+  fit_1<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data = None_train, nodesize = 20, mtry = 4)
+  fit_2<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =None_train, nodesize =20, mtry = 8)
+  fit_3<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =None_train, nodesize =20, mtry = 10)
+  fit_4<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data = None_train, nodesize = 30, mtry = 4)
+  fit_5<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =None_train, nodesize =30, mtry = 8)
+  fit_6<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =None_train, nodesize =30, mtry = 10)
+  fit_7<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data = None_train, nodesize = 50, mtry = 4)
+  fit_8<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =None_train, nodesize =50, mtry = 8)
+  fit_9<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =None_train, nodesize =50, mtry = 10)
+  # Prediction 
+  pred_1<- predict(model_1, test_dat)
+  pred_2<- predict(model_2, test_dat)
+  pred_3<- predict(model_3, test_dat)
+  pred_4<- predict(model_4, test_dat)
+  pred_5<- predict(model_5, test_dat)
+  pred_6<- predict(model_6, test_dat)
+  pred_7<- predict(model_7, test_dat)
+  pred_8<- predict(model_8, test_dat)
+  pred_9<- predict(model_9, test_dat)
+  pre_1<- predict(fit_1, test_dat)
+  pre_2<- predict(fit_2, test_dat)
+  pre_3<- predict(fit_3, test_dat)
+  pre_4<- predict(fit_4, test_dat)
+  pre_5<- predict(fit_5, test_dat)
+  pre_6<- predict(fit_6, test_dat)
+  pre_7<- predict(fit_7, test_dat)
+  pre_8<- predict(fit_8, test_dat)
+  pre_9<- predict(fit_9, test_dat)
+  u=cbind(as.matrix(pred_1),as.matrix(pre_1)) # Therapy ++ Non-therapy
+  U=matrix(0,nrow(test_dat),1)
+  for (j in 1:nrow(test_dat)){
+    if(u[j,1]>=u[j,2]){
+      U[j]=1
+    }
+    else{
+      U[j]=0
+    }
+  }
+  accuracy[ss,1]=mean(U==test_dat[,15])
+  u=cbind(as.matrix(pred_2),as.matrix(pre_2)) # Therapy ++ Non-therapy
+  U=matrix(0,nrow(test_dat),1)
+  for (j in 1:nrow(test_dat)){
+    if(u[j,1]>=u[j,2]){
+      U[j]=1
+    }
+    else{
+      U[j]=0
+    }
+  }
+  accuracy[ss,2]=mean(U==test_dat[,15])
+  u=cbind(as.matrix(pred_3),as.matrix(pre_3)) # Therapy ++ Non-therapy
+  U=matrix(0,nrow(test_dat),1)
+  for (j in 1:nrow(test_dat)){
+    if(u[j,1]>=u[j,2]){
+      U[j]=1
+    }
+    else{
+      U[j]=0
+    }
+  }
+  accuracy[ss,3]=mean(U==test_dat[,15])
+  u=cbind(as.matrix(pred_4),as.matrix(pre_4)) # Therapy ++ Non-therapy
+  U=matrix(0,nrow(test_dat),1)
+  for (j in 1:nrow(test_dat)){
+    if(u[j,1]>=u[j,2]){
+      U[j]=1
+    }
+    else{
+      U[j]=0
+    }
+  }
+  accuracy[ss,4]=mean(U==test_dat[,15])
+  u=cbind(as.matrix(pred_5),as.matrix(pre_5)) # Therapy ++ Non-therapy
+  U=matrix(0,nrow(test_dat),1)
+  for (j in 1:nrow(test_dat)){
+    if(u[j,1]>=u[j,2]){
+      U[j]=1
+    }
+    else{
+      U[j]=0
+    }
+  }
+  accuracy[ss,5]=mean(U==test_dat[,15])
+  u=cbind(as.matrix(pred_6),as.matrix(pre_6)) # Therapy ++ Non-therapy
+  U=matrix(0,nrow(test_dat),1)
+  for (j in 1:nrow(test_dat)){
+    if(u[j,1]>=u[j,2]){
+      U[j]=1
+    }
+    else{
+      U[j]=0
+    }
+  }
+  accuracy[ss,6]=mean(U==test_dat[,15])
+  u=cbind(as.matrix(pred_7),as.matrix(pre_7)) # Therapy ++ Non-therapy
+  U=matrix(0,nrow(test_dat),1)
+  for (j in 1:nrow(test_dat)){
+    if(u[j,1]>=u[j,2]){
+      U[j]=1
+    }
+    else{
+      U[j]=0
+    }
+  }
+  accuracy[ss,7]=mean(U==test_dat[,15])
+  u=cbind(as.matrix(pred_8),as.matrix(pre_8)) # Therapy ++ Non-therapy
+  U=matrix(0,nrow(test_dat),1)
+  for (j in 1:nrow(test_dat)){
+    if(u[j,1]>=u[j,2]){
+      U[j]=1
+    }
+    else{
+      U[j]=0
+    }
+  }
+  accuracy[ss,8]=mean(U==test_dat[,15])
+  u=cbind(as.matrix(pred_9),as.matrix(pre_9)) # Therapy ++ Non-therapy
+  U=matrix(0,nrow(test_dat),1)
+  for (j in 1:nrow(test_dat)){
+    if(u[j,1]>=u[j,2]){
+      U[j]=1
+    }
+    else{
+      U[j]=0
+    }
+  }
+  accuracy[ss,9]=mean(U==test_dat[,15])
+}
+FR=matrix(0,9,1)
+for (b in 1:9){
+ FR[b]=mean(accuracy[,b]) 
+}
+# my optimal tunning parameter: nodesize = 30 mtry = 8
+print(FR)
+```
+
+* Summarize your results, including the model performance and the effect of tuning parameters. Intuitively demonstrate them.
+
+`Solution` 
+
+Here, nodesize refers to how many observations we want in the terminal nodes. This parameter is directly related to tree depth. Higher the number, lower the tree depth. With lower tree depth, the tree might even fail to recognize useful signals from the data.
+
+And mtry refers to how many variables we should select at a node split. It is number of variables available for splitting at each tree node. 
+ 
+Here I try the nodesize of 20,30,50 and mtry of 4, 8 and 10. And in terms of accuracy, the model with parameter nodesize=50 and mtry=4 (model 7) performs best with accuracy about 0.89. 
+
+Intuitively, I think that's beacuse given mtry and other conditions equal, although the larger the nodesize, the lower the tree depth is, and the tree might fail to recognize useful signals from data. But in this case, large nodesize seems to perform better, which indicates relatively lower tree depth suits to this dataset. And for mtry=4 suits to the whole dataset well for a more comprehensive classification.
+
+
+## Question 2 [30 Points] Second Step in Virtual Twins
+
+The second step in a virtual twins model is to use a single tree model (CART) to describe the choice of the best treatment. Perform the following:
+  
+* Based on your optimal tuning parameter, fit the Virtual Twins model described in Question 1. Again, you should not use the `BEST` variable. 
+
+`Solution`
+
+```{r}
+set.seed(1)
+therapy=Sepsis[which(Sepsis[,3]==1),]
+None=Sepsis[which(Sepsis[,3]==0),]
+model_7<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data =therapy , nodesize = 50, mtry = 4)
+fit_7<-randomForest(Health~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data = None, nodesize = 50, mtry = 4)
+pred_7<- predict(model_7, Sepsis)
+pre_7<- predict(fit_7, Sepsis)
+
+```
+
+* For each subject, obtain the predicted best treatment of the training data itself
+
+```{r}
+u=cbind(as.matrix(pred_7),as.matrix(pre_7)) # Therapy ++ Non-therapy
+U=matrix(0,nrow(Sepsis),1)
+for (j in 1:nrow(Sepsis)){
+  if(u[j,1]>=u[j,2]){
+    U[j]=1
+  }
+  else{
+    U[j]=0
+  }
+}
+print(U)
+```
+
+
+* Treating the label of best treatment as the outcome, and fit a single tree model to predict it. Be careful which variables should be removed from this model fitting.
+* Consider tuning the tree model using the cost-complexity tuning.
+
+`Solution`
+
+```{r}
+library(rpart)
+fit <- rpart(U~TIMFIRST+AGE+BLLPLAT+blSOFA+BLLCREAT+ORGANNUM+PRAPACHE+BLGCS+BLIL6+BLADL+BLLBILI, data=as.data.frame(Sepsis))
+printcp(fit) # display the results
+plotcp(fit) # visualize cross-validation results
+prune(fit,cp=0.062)
+```
+
+Comments: Based on the results above, we can see that the after trying accurate single tree model with optimal tunning parameter in question 1, I find that its accuracy improves.
